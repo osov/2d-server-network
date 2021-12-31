@@ -1,0 +1,23 @@
+{
+  "name": "2d-server-network",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./src/main.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "2d-client-network": "file:../2d-client-network",
+    "ecs-threejs": "file:../ecs-threejs",
+    "fastify": "^3.25.3",
+    "fastify-static": "^4.5.0",
+    "three": "^0.136.0",
+    "ws": "^8.4.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.135.0",
+    "@types/ws": "^8.2.2"
+  }
+}
