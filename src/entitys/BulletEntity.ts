@@ -22,8 +22,9 @@ export class BulletEntity extends BaseEntity{
 		this.params = params;
 	}
 
-	onAdd()
+	onAdd(config:any)
 	{
+		super.onAdd(config);
 		this.velocity.set(Math.sin(this.getRotationRad()), Math.cos(this.getRotationRad())).multiplyScalar(this.params.speed);
 		if (this.params.velocityShip)
 			this.velocity.add(this.params.velocityShip);

@@ -1,12 +1,12 @@
 import {Vector2} from 'three';
+import {WebSocket} from 'ws';
 import {BaseSystem, NumberPool} from 'ecs-threejs';
 import {ServerApp} from '../network/ServerApp';
 import {ExtWebSocket} from '../network/WsServer';
-import {MessagesHelper, DataHelper, protocol} from '2d-client-network';
+import {MessagesHelper, DataHelper, protocol, utils} from '2d-client-network';
 import {BaseEntity, keyboardState} from '../entitys/BaseEntity';
 import {DataHelperPool} from '../network/DataHelperPool';
 import {WrapDataHelper} from '../network/WrapDataHelper';
-
 
 interface ConnectionData{
 	idEntity:number;
@@ -25,13 +25,15 @@ export class BaseRoom extends BaseSystem{
 	protected entitys:{[k:number]:BaseEntity} = {};
 	protected dynamicEntitys:{[k:number]:BaseEntity} = {};
 	protected numPool:NumberPool = new NumberPool(65535);
-	protected timeLock:number = 0.5;
+	protected timeLock:number = 500;
+	protected typMessages:typeof protocol.TypMessages;
 
-	constructor(app:ServerApp)
+	constructor(app:ServerApp, typMessages:typeof protocol.TypMessages)
 	{
 		super();
 		this.startTime = this.now();
 		this.app = app;
+		this.typMessages = typMessages;
 		this.dataHelperPool = app.dataHelperPool;
 		var wrap = this.dataHelperPool.get();
 		this.dataHelper = wrap.item;
@@ -55,7 +57,7 @@ export class BaseRoom extends BaseSystem{
 	{
 		if (idMessage < 0)
 			return console.error("Сообщение не определено", idMessage, message);
-		var messagePacker:any = protocol.TypMessages[idMessage as keyof protocol.IMessage];
+		var messagePacker:any = this.typMessages[idMessage as keyof protocol.IMessage];
 		messagePacker.Pack(view, message);
 		return view;
 	}
@@ -70,13 +72,18 @@ export class BaseRoom extends BaseSystem{
 		return arr;
 	}
 
+	sendSocketBuffer(socket:ExtWebSocket, buffer:Uint8Array)
+	{
+		if (socket && socket.readyState === WebSocket.OPEN)
+		{
+			socket.send(buffer);
+		}
+	}
+
 	sendSocket(socket:ExtWebSocket, idMessage:number, message:protocol.IMessage)
 	{
 		var pack = this.makeMessage(idMessage, message);
-		if (socket && socket.readyState === WebSocket.OPEN)
-		{
-			socket.send(pack);
-		}
+		this.sendSocketBuffer(socket, pack);
 	}
 
 	sendTo(user:ConnectionData, idMessage:number, message:protocol.IMessage)
@@ -151,7 +158,7 @@ export class BaseRoom extends BaseSystem{
 			var e = this.dynamicEntitys[id];
 			if (!e.isSyncNetwork())
 				continue;
-			var info:protocol.IEntityInfo = {id:Number(id), position:e.getPosition(), velocity:e.getVelocity(), angle:e.getRotation()};
+			var info:protocol.IEntityInfo = {id:Number(id), position:e.getPosition(), velocity:e.getVelocity(), angle:utils.rangeAngle(e.getRotationDeg())};
 			list.push(info);
 		}
 		return list;
@@ -159,6 +166,7 @@ export class BaseRoom extends BaseSystem{
 
 	getWorldInfo()
 	{
+		console.warn("Переопределить !");
 		var wrap = this.dataHelperPool.get();
 		var view = wrap.item;
 
@@ -168,11 +176,14 @@ export class BaseRoom extends BaseSystem{
 		for (var id in this.entitys)
 		{
 			var e = this.entitys[id];
-			var info:protocol.IEntityInfo = {id:Number(id), position:e.getPosition(), velocity:e.getVelocity(), angle:e.getRotation()};
+			var info:protocol.IEntityInfo = {id:Number(id), position:e.getPosition(), velocity:e.getVelocity(), angle:utils.rangeAngle(e.getRotationDeg())};
 			this.packMessage(protocol.MessageEntityInfo.GetType(), info, view);
 		}
 
+		var buffer = view.toArray();
 		this.dataHelperPool.put(wrap);
+
+		return buffer;
 	}
 
 	onSocketUpdate()
@@ -228,7 +239,7 @@ export class BaseRoom extends BaseSystem{
 		if (isDynamic)
 			this.dynamicEntitys[id] = entity;
 		if (this.entitys[id])
-			console.warn("Сущность уже существует:", id, this.entitys[id], entity);
+			console.warn("Сущность уже существует:", id, this.entitys[id].constructor.name, entity.constructor.name);
 		entity.idEntity = id;
 		entity.addTime = this.getOffsetTime();
 		this.entitys[id] = entity;
@@ -285,9 +296,10 @@ export class BaseRoom extends BaseSystem{
 	// отключился
 	onLeave(socket:ExtWebSocket)
 	{
-		var id = 0;
 		if (this.connectedUsers[socket.idUser])
 			var id = this.connectedUsers[socket.idUser].idEntity;
+		else
+			var id = 0;
 		delete this.connectedUsers[socket.idUser];
 		console.log("Отключился id_user:", socket.idUser);
 

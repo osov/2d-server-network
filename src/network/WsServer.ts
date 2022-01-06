@@ -9,7 +9,7 @@ export interface NetConfig{
 	ssl:boolean;
 	sslKey:string;
 	sslCert:string;
-	port:number;
+	wsPort:number;
 }
 
 export interface ExtWebSocket extends WebSocket {
@@ -34,11 +34,11 @@ export class WsServer extends BaseSystem{
 				key: fs.readFileSync(config.sslKey),
 				cert: fs.readFileSync(config.sslCert)
 			},
-				processRequest).listen(config.port);
+				processRequest).listen(config.wsPort);
 		}
 		else
 		{
-			this.app = httpServ.createServer(processRequest).listen(config.port);
+			this.app = httpServ.createServer(processRequest).listen(config.wsPort);
 		}
 		this.server = new WebSocketServer({server: this.app, perMessageDeflate:false});
 		this.server.on('connection', this.onConnect.bind(this));

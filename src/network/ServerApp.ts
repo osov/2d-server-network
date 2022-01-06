@@ -1,7 +1,7 @@
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
-import {fastify} from 'fastify';
+import {fastify, FastifyRequest,FastifyReply} from 'fastify';
 import * as fa_static from 'fastify-static';
 import path from 'path';
 import {Event} from 'three';
@@ -11,11 +11,21 @@ import {DataHelperPool} from './DataHelperPool';
 import {BaseRoom} from '../rooms/BaseRoom';
 import {MessagesHelper, protocol, DataHelper} from '2d-client-network';
 
-interface ServerConfig extends NetConfig{
+export interface ServerConfig extends NetConfig{
+	ssl:boolean;
+	sslKey:string;
+	sslCert:string;
+	wsPort:number;
 	appPort:number;
 	stepWorld:number; // 60
 	rateSocket:number; // 60/30
 }
+
+type CustomRequest = FastifyRequest<{
+	Body: {
+		action: string
+	};
+}>
 
 
 export class ServerApp extends BaseSystem{
@@ -25,7 +35,7 @@ export class ServerApp extends BaseSystem{
 	private dataHelper:DataHelper;
 	private httpServer = fastify({ logger: !true });
 	private wsServer:WsServer;
-	private rooms:BaseRoom[] = [];
+	public rooms:BaseRoom[] = [];
 	private startServerTime:number;
 	private lastTickTime:number;
 	private updateTime:number;
@@ -61,10 +71,15 @@ export class ServerApp extends BaseSystem{
 		setTimeout(this.serverTick.bind(this), this.config.stepWorld);
 		console.log("Установлен тик сервера:", this.stepWorld, 'мс');
 
+
+		this.httpServer.setNotFoundHandler(this.onServerMessage.bind(this));
+		//this.httpServer.get('/', this.onServerMessage.bind(this));
+
 		this.httpServer.register(fa_static.default, {
-			root: path.join(__dirname, '/../dist'),
+			root: path.join(path.resolve("."), '/dist'),
 			prefix: '/',
 		});
+
 		try
 		{
 			await this.httpServer.listen(this.config.appPort, '0.0.0.0');
@@ -74,6 +89,11 @@ export class ServerApp extends BaseSystem{
 		{
 			console.error('Ошибка севера:', e);
 		}
+	}
+
+	async onServerMessage(req:FastifyRequest, reply:FastifyReply)
+	{
+		return reply.sendFile(path.join(path.resolve("."), '/dist/index.html'))
 	}
 
 	getOffsetTime()
@@ -133,10 +153,10 @@ export class ServerApp extends BaseSystem{
 
 	onMessage(socket:ExtWebSocket, typ:number, srcMessage:protocol.IMessage)
 	{
-		if (typ == protocol.MessageScInit.GetType())
+		if (typ == protocol.MessageCsConnect.GetType())
 		{
-			var message = srcMessage as protocol.IScInit;
-			const idUser = message.idUser;
+			var message = srcMessage as protocol.ICsConnect;
+			const idUser = Number(message.idSession);
 			const roomId = 0;
 			const info = {roomId:roomId, idUser:idUser};
 
@@ -166,14 +186,14 @@ export class ServerApp extends BaseSystem{
 					console.warn("Не удалось войти в комнату", idUser, roomId);
 			}
 			else
-				console.warn('Комната еще не создана, попробуйте позднее!', idUser, roomId);
+				console.warn('Комната еще не создана, попробуйте позднее', idUser, roomId);
 			return;
 		}
 
-		if (!socket.idUser)
+		if (socket.idUser === undefined)
 			return console.warn("Сокет не имеет idUser");
 
-		if (!socket.roomId)
+		if (socket.roomId === undefined)
 			return console.warn("Сокет не закреплен за комнатой");
 
 		let room = this.rooms[socket.roomId];
