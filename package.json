@@ -12,6 +12,8 @@
     "2d-client-network": "file:../2d-client-network",
     "ecs-threejs": "file:../ecs-threejs",
     "fastify": "^3.25.3",
+    "fastify-cookie": "^5.5.0",
+    "fastify-session": "^5.2.1",
     "fastify-static": "^4.5.0",
     "three": "^0.136.0",
     "ws": "^8.4.0"

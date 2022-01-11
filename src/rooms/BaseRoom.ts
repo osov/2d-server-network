@@ -6,7 +6,6 @@ import {ExtWebSocket} from '../network/WsServer';
 import {MessagesHelper, DataHelper, protocol, utils, netUtils} from '2d-client-network';
 import {BaseEntity, keyboardState} from '../entitys/BaseEntity';
 import {DataHelperPool} from '../network/DataHelperPool';
-import {WrapDataHelper} from '../network/WrapDataHelper';
 
 interface ConnectionData{
 	idEntity:number;
@@ -56,11 +55,12 @@ export class BaseRoom extends BaseSystem{
 		entity.updateState();
 		if (entity.position.x >= w)
 			entity.position.x -= 2*w;
-		if (entity.position.x <= -w)
+		else if (entity.position.x <= -w)
 			entity.position.x += 2*w;
+
 		if (entity.position.y >= h)
 			entity.position.y -= 2*h;
-		if (entity.position.y <= -h)
+		else if (entity.position.y <= -h)
 			entity.position.y += 2*h;
 		entity.applyParams();
 	}
@@ -186,7 +186,6 @@ export class BaseRoom extends BaseSystem{
 
 	getWorldInfo()
 	{
-		console.warn("Переопределить !");
 		var wrap = this.dataHelperPool.get();
 		var view = wrap.item;
 
@@ -196,13 +195,18 @@ export class BaseRoom extends BaseSystem{
 		for (var id in this.entitys)
 		{
 			var e = this.entitys[id];
-			var info:protocol.IEntityInfo = {id:Number(id), position:e.getPosition(), velocity:e.getVelocity(), angle:utils.rangeAngle(e.getRotationDeg())};
-			this.packMessage(protocol.MessageEntityInfo.GetType(), info, view);
+			// todo опасно если будет угол не целым числом или позиция
+			var state:any = e.getState() as any;
+			if (state.angle !== undefined)
+				state.angle = netUtils.degToByte(state.angle);
+			if (state.position !== undefined)
+				state.position = netUtils.vec2FloatToInt(state.position);
+			if (state.velocity !== undefined)
+				state.velocity = netUtils.toRangeVec2(state.velocity, 'uint8', -0.5, 0.5);
+			this.packMessage(e.idProtocol(), state, view);
 		}
-
 		var buffer = view.toArray();
 		this.dataHelperPool.put(wrap);
-
 		return buffer;
 	}
 
@@ -233,7 +237,7 @@ export class BaseRoom extends BaseSystem{
 		const user = this.connectedUsers[socket.idUser];
 		if (!user)
 			return;
-		var angle = message.angle / 255 * 360;
+		var angle = netUtils.byteToDeg(message.angle);
 		user.keyboard.mouseAngle = angle;
 	}
 
@@ -281,7 +285,7 @@ export class BaseRoom extends BaseSystem{
 		const idUser = socket.idUser;
 		console.log("Переподключение id_user:", idUser);
 
-		this.sendSocket(socket, protocol.MessageScClose.GetType(), {}); // todo возможно иногда не дойдет ?!
+		this.sendSocket(socket, protocol.MessageScClose.GetType(), {});
 
 		if (this.connectedUsers[idUser])
 			this.onLeave(socket);
@@ -311,7 +315,7 @@ export class BaseRoom extends BaseSystem{
 		else
 			var id = 0;
 		delete this.connectedUsers[socket.idUser];
-		console.log("Отключился id_user:", socket.idUser);
+		console.log("Отключился idUser/idEntity:", socket.idUser, id);
 
 		var msg:protocol.IScLeave = {idUser:socket.idUser, id:id};
 		this.addPack(protocol.MessageScLeave.GetType(), msg);

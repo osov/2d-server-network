@@ -5,11 +5,14 @@ import {fastify, FastifyRequest,FastifyReply} from 'fastify';
 import * as fa_static from 'fastify-static';
 import path from 'path';
 import {Event} from 'three';
-import {BaseSystem} from 'ecs-threejs';
+import {BaseSystem, NumberPool} from 'ecs-threejs';
 import {NetConfig, ExtWebSocket, WsServer} from './WsServer';
 import {DataHelperPool} from './DataHelperPool';
 import {BaseRoom} from '../rooms/BaseRoom';
 import {MessagesHelper, protocol, DataHelper} from '2d-client-network';
+import fastifyCookie from 'fastify-cookie';
+import fastifySession from 'fastify-session';
+
 
 export interface ServerConfig extends NetConfig{
 	ssl:boolean;
@@ -37,6 +40,8 @@ export class ServerApp extends BaseSystem{
 	public dataHelperPool:DataHelperPool = new DataHelperPool();
 	public rooms:{[k:string]:BaseRoom} = {};
 	public config:ServerConfig;
+	public secretSession:string = 'SessionC0DESessionC0DESessionC0D';
+	private numPool:NumberPool = new NumberPool(16777215);
 	private dataHelper:DataHelper;
 	private httpServer = fastify({ logger: !true });
 	private wsServer:WsServer;
@@ -74,13 +79,22 @@ export class ServerApp extends BaseSystem{
 		console.log("Установлен тик сервера:", this.stepWorld, 'мс');
 
 
-		this.httpServer.setNotFoundHandler(this.onServerMessage.bind(this));
-		//this.httpServer.get('/', this.onServerMessage.bind(this));
+		this.httpServer.setNotFoundHandler(this.onServerMessage404.bind(this));
+		this.httpServer.get('/', this.onServerMessage.bind(this));
 
 		this.httpServer.register(fa_static.default, {
 			root: path.join(path.resolve("."), '/dist'),
 			prefix: '/',
 		});
+
+		this.httpServer.register(fastifyCookie);
+		this.httpServer.register(fastifySession, {secret: this.secretSession, cookie:{secure:false, httpOnly:false}});
+
+		this.httpServer.addHook('preHandler', (request, reply, next) => {
+			if (request.session.idUser === undefined)
+				request.session.idUser = this.numPool.get();
+			next();
+		})
 
 		try
 		{
@@ -93,9 +107,16 @@ export class ServerApp extends BaseSystem{
 		}
 	}
 
+	async onServerMessage404(req:FastifyRequest, reply:FastifyReply)
+	{
+		console.log('404');
+		return this.onServerMessage(req, reply);
+	}
+
 	async onServerMessage(req:FastifyRequest, reply:FastifyReply)
 	{
-		return reply.sendFile(path.join(path.resolve("."), '/dist/index.html'))
+		const stream = fs.createReadStream(path.join(path.resolve("."), '/dist/index.html'))
+		reply.type('text/html').send(stream);
 	}
 
 	getOffsetTime()
@@ -126,12 +147,13 @@ export class ServerApp extends BaseSystem{
 	onDisconnect(e:Event)
 	{
 		var socket = e.socket as ExtWebSocket;
-		if (socket.idUser && socket.roomId)
+		if (socket.idUser !== undefined && socket.roomId !== undefined) // todo просто проверка socket.idUser без условий при значении 0 выдаст ложь !
 		{
 			var rid = socket.roomId;
 			var room = this.rooms[rid];
 			if (room)
 				room.onLeave(socket);
+			this.numPool.put(socket.idUser, 5000);
 		}
 	}
 
@@ -153,21 +175,37 @@ export class ServerApp extends BaseSystem{
 		}
 	}
 
-	onMessage(socket:ExtWebSocket, typ:number, srcMessage:protocol.IMessage)
+	async decodeSession(idSession:string)
+	{
+		return new Promise(resolve => {
+			const request:any = {};
+			(this.httpServer as any).decryptSession(idSession, request, () => {
+				resolve(request.session);
+			})
+		});
+	}
+
+	async onMessage(socket:ExtWebSocket, typ:number, srcMessage:protocol.IMessage)
 	{
 		if (typ == protocol.MessageCsConnect.GetType())
 		{
 			var message = srcMessage as protocol.ICsConnect;
-			const idUser = Number(message.idSession);
+			var data:any = await this.decodeSession(message.idSession);
+			const idUser = data.idUser;
+			if (idUser === undefined)
+			{
+				console.warn("Сессия не считана:", message);
+				return;
+			}
 			const roomId = 0;
 			const info = {roomId:roomId, idUser:idUser};
 
 			// уже закреплена эта комната
-			if (socket.roomId && socket.roomId == roomId)
+			if (socket.roomId !== undefined && socket.roomId == roomId)
 				return;
 
 			// уже был подключен к какой-то другой комнате
-			if (socket.roomId)
+			if (socket.roomId !== undefined)
 			{
 				let room = this.getRoomId(socket.roomId);
 				if (room)
