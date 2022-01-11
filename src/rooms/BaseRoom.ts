@@ -1,9 +1,9 @@
-import {Vector2} from 'three';
+import {Vector2, Vector3} from 'three';
 import {WebSocket} from 'ws';
 import {BaseSystem, NumberPool} from 'ecs-threejs';
 import {ServerApp} from '../network/ServerApp';
 import {ExtWebSocket} from '../network/WsServer';
-import {MessagesHelper, DataHelper, protocol, utils} from '2d-client-network';
+import {MessagesHelper, DataHelper, protocol, utils, netUtils} from '2d-client-network';
 import {BaseEntity, keyboardState} from '../entitys/BaseEntity';
 import {DataHelperPool} from '../network/DataHelperPool';
 import {WrapDataHelper} from '../network/WrapDataHelper';
@@ -39,7 +39,6 @@ export class BaseRoom extends BaseSystem{
 		this.dataHelper = wrap.item;
 	}
 
-
 	now()
 	{
 		return Date.now();
@@ -48,6 +47,22 @@ export class BaseRoom extends BaseSystem{
 	getOffsetTime()
 	{
 		return this.now() - this.startTime;
+	}
+
+	wrapPosition(entity:BaseEntity)
+	{
+		const w = this.app.config.worldWidth * 0.5;
+		const h = this.app.config.worldHeight * 0.5;
+		entity.updateState();
+		if (entity.position.x >= w)
+			entity.position.x -= 2*w;
+		if (entity.position.x <= -w)
+			entity.position.x += 2*w;
+		if (entity.position.y >= h)
+			entity.position.y -= 2*h;
+		if (entity.position.y <= -h)
+			entity.position.y += 2*h;
+		entity.applyParams();
 	}
 
 // -----------------------------------------------------------------------
@@ -127,7 +142,7 @@ export class BaseRoom extends BaseSystem{
 
 	sendFullBuffer()
 	{
-		var buffer = this.dataHelper.toArray();
+		const buffer = this.dataHelper.toArray();
 		this.sendAllBuffer(buffer);
 		this.dataHelper.startWriting();
 	}
@@ -139,13 +154,13 @@ export class BaseRoom extends BaseSystem{
 
 	addBuffer(buffer:Uint8Array)
 	{
-		this.dataHelper.writeBytes(buffer);
+		this.dataHelper.writeRawBytes(buffer);
 	}
 
 	InsertFirstPack(idMessage:number, message:protocol.IMessage)
 	{
-		var curBuffer = this.dataHelper.toArray();
-		this.dataHelper.startWriting();
+		var curBuffer = utils.copyBuffer(this.dataHelper.toArray()); // просто .toArray() вернет новый массив, но с указателем на старые элементы
+		this.dataHelper.startWriting(); // соответственно при изменении его, будет меняться исходный, т.е. по факту не копия старого.
 		this.addPack(idMessage, message);
 		this.addBuffer(curBuffer);
 	}
@@ -158,7 +173,12 @@ export class BaseRoom extends BaseSystem{
 			var e = this.dynamicEntitys[id];
 			if (!e.isSyncNetwork())
 				continue;
-			var info:protocol.IEntityInfo = {id:Number(id), position:e.getPosition(), velocity:e.getVelocity(), angle:utils.rangeAngle(e.getRotationDeg())};
+			var info:protocol.IEntityInfo = {
+				id:Number(id),
+				position:netUtils.vec2FloatToInt(e.getPosition()),
+				velocity:netUtils.toRangeVec2(e.getVelocity(), 'uint8', -0.5, 0.5),
+				angle:netUtils.degToByte(e.getRotationDeg())
+			};
 			list.push(info);
 		}
 		return list;
@@ -197,16 +217,6 @@ export class BaseRoom extends BaseSystem{
 		this.sendFullBuffer();
 	}
 
-	InputUpdate(deltaTime:number)
-	{
-		for (var key in this.connectedUsers)
-		{
-			const user = this.connectedUsers[key];
-			//if (user.keyboard)
-			//	user.keyboard.update(deltaTime);
-		}
-	}
-
 	onMessageInput(socket:ExtWebSocket, message:protocol.ICsInput)
 	{
 		const user = this.connectedUsers[socket.idUser];
@@ -223,7 +233,7 @@ export class BaseRoom extends BaseSystem{
 		const user = this.connectedUsers[socket.idUser];
 		if (!user)
 			return;
-		var angle = message.angle;
+		var angle = message.angle / 255 * 360;
 		user.keyboard.mouseAngle = angle;
 	}
 
@@ -244,7 +254,7 @@ export class BaseRoom extends BaseSystem{
 		entity.addTime = this.getOffsetTime();
 		this.entitys[id] = entity;
 		if (Object.keys(this.connectedUsers).length == 0)
-			return;
+			return console.log("Некому слать инфу о создании сущности", id);
 		this.addPack(entity.idProtocol(), entity.getState());
 		return id;
 	}
@@ -271,7 +281,7 @@ export class BaseRoom extends BaseSystem{
 		const idUser = socket.idUser;
 		console.log("Переподключение id_user:", idUser);
 
-		this.addPack(protocol.MessageScClose.GetType(), {});
+		this.sendSocket(socket, protocol.MessageScClose.GetType(), {}); // todo возможно иногда не дойдет ?!
 
 		if (this.connectedUsers[idUser])
 			this.onLeave(socket);
@@ -339,7 +349,6 @@ export class BaseRoom extends BaseSystem{
 		// важно зафиксировать время последнего пересчета и отправить его в рассчет интерполяции(если апдейт происходит в другом времени),
 		// т.к. если сокет отправит сообщение о текущем времени,
 		// то по факту позиция объектов будет старая, а времени будет больше, ведь обновление происходит именно в этот момент
-		this.InputUpdate(deltaTime);
 	}
 
 

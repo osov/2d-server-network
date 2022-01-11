@@ -9,6 +9,7 @@ export interface keyboardState{
 export class BaseEntity extends ECS.BaseEntity{
 
 	protected isAlive:boolean = true;
+	public idUser:number = -1;
 
 	constructor()
 	{

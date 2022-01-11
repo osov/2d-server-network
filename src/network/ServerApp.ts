@@ -19,6 +19,9 @@ export interface ServerConfig extends NetConfig{
 	appPort:number;
 	stepWorld:number; // 60
 	rateSocket:number; // 60/30
+	worldWrap:boolean;
+	worldWidth:number;
+	worldHeight:number;
 }
 
 type CustomRequest = FastifyRequest<{
@@ -32,17 +35,16 @@ export class ServerApp extends BaseSystem{
 
 	public messagesHelper:typeof MessagesHelper;
 	public dataHelperPool:DataHelperPool = new DataHelperPool();
+	public rooms:{[k:string]:BaseRoom} = {};
+	public config:ServerConfig;
 	private dataHelper:DataHelper;
 	private httpServer = fastify({ logger: !true });
 	private wsServer:WsServer;
-	public rooms:BaseRoom[] = [];
-	private startServerTime:number;
-	private lastTickTime:number;
-	private updateTime:number;
+	private startServerTime:number = 0;
+	private lastTickTime:number = 0;
 	private socketTime:number;
 	private stepWorld:number;
-	private ticks:number;
-	private config:ServerConfig;
+	private ticks:number = 0;
 
 
 	constructor(config:ServerConfig, messagesHelper:typeof MessagesHelper)

@@ -18,8 +18,8 @@ export class SimpleEntity extends BaseEntity{
 		var velMagnitude = this.velocity.length();
 		if (velMagnitude > this.maxSpeed)
 			this.velocity.multiplyScalar(this.maxSpeed / velMagnitude);
-		this.position.x += this.velocity.x;
-		this.position.y += this.velocity.y;
+		this.position.x += this.velocity.x * deltaTime;
+		this.position.y += this.velocity.y * deltaTime;
 	}
 
 	turnRight(deltaAngle:number)
@@ -34,7 +34,7 @@ export class SimpleEntity extends BaseEntity{
 
 	accelerate(acceleration:number)
 	{
-		var rad = this.getRotationRad();
+		var rad = 2*Math.PI - this.getRotationRad();
 		this.tmpVec.set(Math.sin(rad), Math.cos(rad));
 		this.tmpVec.multiplyScalar(acceleration);
 		this.velocity.add(this.tmpVec);
