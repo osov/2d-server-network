@@ -41,7 +41,7 @@ export class ServerApp extends BaseSystem{
 	public rooms:{[k:string]:BaseRoom} = {};
 	public config:ServerConfig;
 	public secretSession:string = 'SessionC0DESessionC0DESessionC0D';
-	private numPool:NumberPool = new NumberPool(16777215);
+	private lastUid:number = 0;
 	private dataHelper:DataHelper;
 	private httpServer = fastify({ logger: !true });
 	private wsServer:WsServer;
@@ -76,11 +76,11 @@ export class ServerApp extends BaseSystem{
 		// TODO если не делать округление, то почему-то жестко жрет CPU.
 		this.stepWorld = Math.floor(1000/this.config.stepWorld);
 		setTimeout(this.serverTick.bind(this), this.config.stepWorld);
-		console.log("Установлен тик сервера:", this.stepWorld, 'мс');
+		this.log("Установлен тик сервера:", this.stepWorld, 'мс');
 
 
-		this.httpServer.setNotFoundHandler(this.onServerMessage404.bind(this));
 		this.httpServer.get('/', this.onServerMessage.bind(this));
+		this.httpServer.setNotFoundHandler(this.onServerMessage404.bind(this));
 
 		this.httpServer.register(fa_static.default, {
 			root: path.join(path.resolve("."), '/dist'),
@@ -91,25 +91,28 @@ export class ServerApp extends BaseSystem{
 		this.httpServer.register(fastifySession, {secret: this.secretSession, cookie:{secure:false, httpOnly:false}});
 
 		this.httpServer.addHook('preHandler', (request, reply, next) => {
-			if (request.session.idUser === undefined)
-				request.session.idUser = this.numPool.get();
+			if (request.session.sessionData === undefined)
+			{
+				request.session.sessionData = {};
+				this.log("Создали сессию");
+			}
 			next();
 		})
 
 		try
 		{
 			await this.httpServer.listen(this.config.appPort, '0.0.0.0');
-			console.log('Запущен сервер приложения:', this.httpServer.server.address());
+			this.log('Запущен сервер приложения:', this.httpServer.server.address());
 		}
 		catch (e)
 		{
-			console.error('Ошибка севера:', e);
+			this.error('Ошибка севера:', e);
 		}
 	}
 
 	async onServerMessage404(req:FastifyRequest, reply:FastifyReply)
 	{
-		console.log('404');
+		this.log('404');
 		return this.onServerMessage(req, reply);
 	}
 
@@ -153,7 +156,6 @@ export class ServerApp extends BaseSystem{
 			var room = this.rooms[rid];
 			if (room)
 				room.onLeave(socket);
-			this.numPool.put(socket.idUser, 5000);
 		}
 	}
 
@@ -171,7 +173,7 @@ export class ServerApp extends BaseSystem{
 		}
 		catch(e:any)
 		{
-			console.error("Ошибка в пакете|id_user=", socket.idUser, 'данные:', data, '\nстек:', e.stack);
+			this.error("Ошибка в пакете|idUser=", socket.idUser, 'данные:', data, '\nстек:', e.stack);
 		}
 	}
 
@@ -191,14 +193,19 @@ export class ServerApp extends BaseSystem{
 		{
 			var message = srcMessage as protocol.ICsConnect;
 			var data:any = await this.decodeSession(message.idSession);
-			const idUser = data.idUser;
-			if (idUser === undefined)
+			if (data.sessionData === undefined)
 			{
-				console.warn("Сессия не считана:", message);
+				this.warn("Сессия не считана:", message);
 				return;
 			}
+			if (data.sessionData.idUser === undefined)
+			{
+				data.sessionData.idUser = this.lastUid++;
+				console.log("Выдаем idUser:", data.sessionData.idUser);
+			}
+			const idUser = data.sessionData.idUser;
 			const roomId = 0;
-			const info = {roomId:roomId, idUser:idUser};
+			const info = {roomId, idUser, sessionData:data.sessionData};
 
 			// уже закреплена эта комната
 			if (socket.roomId !== undefined && socket.roomId == roomId)
@@ -223,22 +230,22 @@ export class ServerApp extends BaseSystem{
 					room.onReconnect(room.connectedUsers[idUser].socket);
 				const is_join = room.onJoin(socket, info);
 				if (!is_join)
-					console.warn("Не удалось войти в комнату", idUser, roomId);
+					this.warn("Не удалось войти в комнату", idUser, roomId);
 			}
 			else
-				console.warn('Комната еще не создана, попробуйте позднее', idUser, roomId);
+				this.warn('Комната еще не создана, попробуйте позднее', idUser, roomId);
 			return;
 		}
 
 		if (socket.idUser === undefined)
-			return console.warn("Сокет не имеет idUser");
+			return this.warn("Сокет не имеет idUser");
 
 		if (socket.roomId === undefined)
-			return console.warn("Сокет не закреплен за комнатой");
+			return this.warn("Сокет не закреплен за комнатой");
 
 		let room = this.rooms[socket.roomId];
 		if (!room)
-			return console.warn('Пакет cs -> комната не существует:', socket.roomId);
+			return this.warn('Пакет cs -> комната не существует:', socket.roomId);
 		room.onMessage(socket, typ, srcMessage);
 	}
 
@@ -271,7 +278,7 @@ export class ServerApp extends BaseSystem{
 		}
 		catch(e:any)
 		{
-			console.error("Ошибка в обработке комнат:", e.stack);
+			this.error("Ошибка в обработке комнат:", e.stack);
 		}
 
 		setTimeout(this.serverTick.bind(this), this.stepWorld);

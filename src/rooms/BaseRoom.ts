@@ -71,7 +71,7 @@ export class BaseRoom extends BaseSystem{
 	packMessage(idMessage:number, message:protocol.IMessage, view:DataHelper)
 	{
 		if (idMessage < 0)
-			return console.error("Сообщение не определено", idMessage, message);
+			return this.error("Сообщение не определено", idMessage, message);
 		var messagePacker:any = this.typMessages[idMessage as keyof protocol.IMessage];
 		messagePacker.Pack(view, message);
 		return view;
@@ -111,7 +111,7 @@ export class BaseRoom extends BaseSystem{
 	{
 		var user = this.connectedUsers[idUser];
 		if (!user)
-			return console.warn("setToUid не найден юзер:", idUser, idMessage);
+			return this.warn("setToUid не найден юзер:", idUser, idMessage);
 		return this.sendTo(user, idMessage, message);
 	}
 
@@ -253,12 +253,12 @@ export class BaseRoom extends BaseSystem{
 		if (isDynamic)
 			this.dynamicEntitys[id] = entity;
 		if (this.entitys[id])
-			console.warn("Сущность уже существует:", id, this.entitys[id].constructor.name, entity.constructor.name);
+			this.warn("Сущность уже существует:", id, this.entitys[id].constructor.name, entity.constructor.name);
 		entity.idEntity = id;
 		entity.addTime = this.getOffsetTime();
 		this.entitys[id] = entity;
 		if (Object.keys(this.connectedUsers).length == 0)
-			return console.log("Некому слать инфу о создании сущности", id);
+			return this.log("Некому слать инфу о создании сущности", id);
 		this.addPack(entity.idProtocol(), entity.getState());
 		return id;
 	}
@@ -276,14 +276,14 @@ export class BaseRoom extends BaseSystem{
 		delete this.entitys[id];
 		delete this.dynamicEntitys[id];
 
-		var msg:protocol.IScRemoveE = {id:id};
+		var msg:protocol.IScRemoveE = {idEntity:id};
 		this.addPack(protocol.MessageScRemoveE.GetType(), msg);
 	}
 
 	onReconnect(socket:ExtWebSocket)
 	{
 		const idUser = socket.idUser;
-		console.log("Переподключение id_user:", idUser);
+		this.log("Переподключение id_user:", idUser);
 
 		this.sendSocket(socket, protocol.MessageScClose.GetType(), {});
 
@@ -304,6 +304,7 @@ export class BaseRoom extends BaseSystem{
 		// Юзеру - инфу о соедиении
 		var msg:protocol.IScInit = {serverStartTime:BigInt(this.startTime), offsetTime:this.getOffsetTime(), idUser:idUser, data:JSON.stringify(info)};
 		this.sendSocket(socket, protocol.MessageScInit.GetType(), msg);
+		this.log("All:", Object.keys(this.connectedUsers));
 		return true;
 	}
 
@@ -315,7 +316,7 @@ export class BaseRoom extends BaseSystem{
 		else
 			var id = 0;
 		delete this.connectedUsers[socket.idUser];
-		console.log("Отключился idUser/idEntity:", socket.idUser, id);
+		this.log("Отключился idUser/idEntity:", socket.idUser, id);
 
 		var msg:protocol.IScLeave = {idUser:socket.idUser, id:id};
 		this.addPack(protocol.MessageScLeave.GetType(), msg);
@@ -324,7 +325,7 @@ export class BaseRoom extends BaseSystem{
 	// покидание комнаты
 	onLeaveRoom(socket:ExtWebSocket)
 	{
-		console.log("Покинул комнату id_user:", socket.idUser);
+		this.log("Покинул комнату idUser:", socket.idUser);
 	}
 
 	// обработка сообщения
