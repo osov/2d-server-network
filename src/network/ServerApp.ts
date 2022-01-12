@@ -4,7 +4,7 @@ import https from 'https';
 import {fastify, FastifyRequest,FastifyReply} from 'fastify';
 import * as fa_static from 'fastify-static';
 import path from 'path';
-import {Event} from 'three';
+import {Event, Vector2} from 'three';
 import {BaseSystem, NumberPool} from 'ecs-threejs';
 import {NetConfig, ExtWebSocket, WsServer} from './WsServer';
 import {DataHelperPool} from './DataHelperPool';
@@ -23,8 +23,7 @@ export interface ServerConfig extends NetConfig{
 	stepWorld:number; // 60
 	rateSocket:number; // 60/30
 	worldWrap:boolean;
-	worldWidth:number;
-	worldHeight:number;
+	worldSize:Vector2;
 }
 
 type CustomRequest = FastifyRequest<{

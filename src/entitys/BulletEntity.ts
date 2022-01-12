@@ -8,13 +8,13 @@ export interface BulletData{
 	damage:number;
 	velocityShip?:Vector2;
 	timeLife:number;
-	idOwner:number;
 }
 
 export class BulletEntity extends BaseEntity{
 
-	private params:BulletData;
+	public params:BulletData;
 	private startPos:Vector2 = new Vector2();
+	private startTime:number;
 
 	constructor(params:BulletData)
 	{
@@ -22,31 +22,33 @@ export class BulletEntity extends BaseEntity{
 		this.params = params;
 	}
 
-	onAdd(config:any)
+	onAdded()
 	{
-		super.onAdd(config);
+		super.onAdded();
 		this.velocity.set(Math.sin(this.getRotationRad()), Math.cos(this.getRotationRad())).multiplyScalar(this.params.speed);
 		if (this.params.velocityShip)
 			this.velocity.add(this.params.velocityShip);
 		this.startPos.copy(this.get2dPosition());
+		this.startTime = Date.now();
 	}
 
-	doUpdate(deltaTime:number)
+	doUpdate(_deltaTime:number)
 	{
 		if (!this.isAlive)
 			return;
-		var now = Date.now();
-		var d = now - this.addTime;
-		if (d > this.params.timeLife)
+		var deltaTime = Date.now() - this.startTime;
+		if (deltaTime > this.params.timeLife)
 			this.isAlive = false;
-		var vel = this.velocity.clone().multiplyScalar(1/1000 * d);
+		var vel = this.velocity.clone().multiplyScalar(deltaTime * 1);
 		var newPos = this.startPos.clone().add(vel);
 		this.setPosition(newPos);
-		if (this.config.worldWrap)
+		
+		if (this.wrapConfig.worldWrap)
 		{
 			var pos = new Vector2(this.position.x, this.position.y);
-			utils.vectorToRange(pos, this.config.worldSize);
+			utils.vectorToRange(pos, this.wrapConfig.worldSize);
 			this.setPosition(pos);
+			//console.log('Wrap', deltaTime, vel);
 		}
 	}
 
@@ -58,7 +60,7 @@ export class BulletEntity extends BaseEntity{
 	// состояние объекта
 	getState():protocol.IEntityBullet
 	{
-		return {id:this.idEntity, position:this.getPosition(), velocity:this.velocity, angle:this.getRotationDeg()};
+		return {id:this.idEntity, position:this.startPos, velocity:this.velocity, angle:this.getRotationDeg(), offsetTime:this.addTime};
 	}
 
 

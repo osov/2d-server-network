@@ -19,7 +19,7 @@
     "ws": "^8.4.0"
   },
   "devDependencies": {
-    "@types/three": "^0.135.0",
+    "@types/three": "^0.136.1",
     "@types/ws": "^8.2.2"
   }
 }

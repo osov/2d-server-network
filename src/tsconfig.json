@@ -4,7 +4,11 @@
     	"esModuleInterop": true,
         "moduleResolution": "node",
         "strictPropertyInitialization": false,
-        "strict": true
+        "strict": true,
+        "baseUrl": ".",
+		"paths": {
+			"three":["../node_modules/ecs-threejs/node_modules/three"]
+		}
     },
     "include": ["**/*.ts"]
 }

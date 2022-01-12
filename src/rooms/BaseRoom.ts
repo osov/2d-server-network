@@ -50,8 +50,8 @@ export class BaseRoom extends BaseSystem{
 
 	wrapPosition(entity:BaseEntity)
 	{
-		const w = this.app.config.worldWidth * 0.5;
-		const h = this.app.config.worldHeight * 0.5;
+		const w = this.app.config.worldSize.x * 0.5;
+		const h = this.app.config.worldSize.y * 0.5;
 		entity.updateState();
 		if (entity.position.x >= w)
 			entity.position.x -= 2*w;
@@ -165,6 +165,17 @@ export class BaseRoom extends BaseSystem{
 		this.addBuffer(curBuffer);
 	}
 
+	modifyState(state:any)
+	{
+		if (state.angle !== undefined)
+			state.angle = netUtils.degToByte(state.angle);
+		if (state.position !== undefined)
+			state.position = netUtils.vec2FloatToInt(state.position);
+		if (state.velocity !== undefined)
+			state.velocity = netUtils.toRangeVec2(state.velocity, 'uint8', -0.5, 0.5);
+		return state;
+	}
+
 	getWorldState()
 	{
 		var list = [];
@@ -173,12 +184,14 @@ export class BaseRoom extends BaseSystem{
 			var e = this.dynamicEntitys[id];
 			if (!e.isSyncNetwork())
 				continue;
+
 			var info:protocol.IEntityInfo = {
 				id:Number(id),
 				position:netUtils.vec2FloatToInt(e.getPosition()),
 				velocity:netUtils.toRangeVec2(e.getVelocity(), 'uint8', -0.5, 0.5),
 				angle:netUtils.degToByte(e.getRotationDeg())
 			};
+			//console.log("WorldState", info);
 			list.push(info);
 		}
 		return list;
@@ -196,13 +209,8 @@ export class BaseRoom extends BaseSystem{
 		{
 			var e = this.entitys[id];
 			// todo опасно если будет угол не целым числом или позиция
-			var state:any = e.getState() as any;
-			if (state.angle !== undefined)
-				state.angle = netUtils.degToByte(state.angle);
-			if (state.position !== undefined)
-				state.position = netUtils.vec2FloatToInt(state.position);
-			if (state.velocity !== undefined)
-				state.velocity = netUtils.toRangeVec2(state.velocity, 'uint8', -0.5, 0.5);
+			var state = this.modifyState(e.getState() as any);
+			//console.log("WorldInfo", info);
 			this.packMessage(e.idProtocol(), state, view);
 		}
 		var buffer = view.toArray();
@@ -254,12 +262,16 @@ export class BaseRoom extends BaseSystem{
 			this.dynamicEntitys[id] = entity;
 		if (this.entitys[id])
 			this.warn("Сущность уже существует:", id, this.entitys[id].constructor.name, entity.constructor.name);
+		entity.onAdd(this.app.config); // здесь метка времени
+		entity.addTime = this.getOffsetTime(); // а тут перебиваем время на смещенное, т.к. клиент считать будет по нему
 		entity.idEntity = id;
-		entity.addTime = this.getOffsetTime();
 		this.entitys[id] = entity;
+		entity.onAdded();
 		if (Object.keys(this.connectedUsers).length == 0)
 			return this.log("Некому слать инфу о создании сущности", id);
-		this.addPack(entity.idProtocol(), entity.getState());
+		var state = this.modifyState(entity.getState() as any);
+		//console.log("Add", state);
+		this.addPack(entity.idProtocol(), state);
 		return id;
 	}
 
@@ -304,7 +316,6 @@ export class BaseRoom extends BaseSystem{
 		// Юзеру - инфу о соедиении
 		var msg:protocol.IScInit = {serverStartTime:BigInt(this.startTime), offsetTime:this.getOffsetTime(), idUser:idUser, data:JSON.stringify(info)};
 		this.sendSocket(socket, protocol.MessageScInit.GetType(), msg);
-		this.log("All:", Object.keys(this.connectedUsers));
 		return true;
 	}
 

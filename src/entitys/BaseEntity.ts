@@ -8,13 +8,30 @@ export interface keyboardState{
 
 export class BaseEntity extends ECS.BaseEntity{
 
-	protected isAlive:boolean = true;
+	public healht:number = 100;
+	public isAlive:boolean = true;
 	public idUser:number = -1;
+	public radius:number = 10;
 
 	constructor()
 	{
 		super();
-		this.addTime = Date.now();
+	}
+
+	onAdded()
+	{
+		super.onAdded();
+	}
+
+	doDamage(damage:number, damager?:BaseEntity)
+	{
+		var oldHealht = this.healht;
+		this.healht -= damage;
+		if (this.healht < 0)
+			this.healht = 0;
+		this.isAlive = this.healht > 0;
+		if (oldHealht > 0 && this.healht == 0)
+			this.dispatchEvent({type:'destroy', killer:damager});
 	}
 
 	doReset()
@@ -51,7 +68,7 @@ export class BaseEntity extends ECS.BaseEntity{
 	// событие удаления сущности
 	onRemove()
 	{
-
+		super.onRemove();
 	}
 
 	// синхронизировать ли по сети
