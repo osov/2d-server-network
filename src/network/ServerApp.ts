@@ -41,6 +41,7 @@ export class ServerApp extends BaseSystem{
 	private lastTickTime:number = 0;
 	private stepWorld:number;
 	private ticks:number = 0;
+	private lastDebugTime:number = 0;
 
 
 	constructor(config:ServerConfig, messagesHelper:typeof MessagesHelper)
@@ -253,7 +254,11 @@ export class ServerApp extends BaseSystem{
 			var dt = 1;
 		this.lastTickTime = now;
 		this.ticks++;
-
+		if (now > this.lastDebugTime)
+		{
+			this.lastDebugTime = now + 300;
+			//console.log(dt);
+		}
 		try
 		{
 			for (var rid in this.rooms)

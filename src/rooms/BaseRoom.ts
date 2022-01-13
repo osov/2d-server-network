@@ -260,7 +260,7 @@ export class BaseRoom extends BaseSystem{
 		this.entitys[id] = entity;
 		entity.onAdded();
 		if (Object.keys(this.connectedUsers).length == 0)
-			return this.log("Некому слать инфу о создании сущности", id);
+			return; //this.log("Некому слать инфу о создании сущности", id);
 		var state = this.encodeEntityState(entity.getState() as any, 'uint16');
 		//console.log("Add", entity.id, state);
 		this.addPack(entity.idProtocol(), state);
