@@ -1,17 +1,17 @@
 import fs from 'fs';
-import http from 'http';
-import https from 'https';
+import path from 'path';
+
 import {fastify, FastifyRequest,FastifyReply} from 'fastify';
 import * as fa_static from 'fastify-static';
-import path from 'path';
+import fastifyCookie from 'fastify-cookie';
+import fastifySession from 'fastify-session';
+
 import {Event, Vector2} from 'three';
-import {BaseSystem, NumberPool} from 'ecs-threejs';
+import {BaseSystem} from 'ecs-threejs';
 import {NetConfig, ExtWebSocket, WsServer} from './WsServer';
 import {DataHelperPool} from './DataHelperPool';
 import {BaseRoom} from '../rooms/BaseRoom';
 import {MessagesHelper, protocol, DataHelper} from '2d-client-network';
-import fastifyCookie from 'fastify-cookie';
-import fastifySession from 'fastify-session';
 
 
 export interface ServerConfig extends NetConfig{
@@ -26,13 +26,6 @@ export interface ServerConfig extends NetConfig{
 	worldSize:Vector2;
 }
 
-type CustomRequest = FastifyRequest<{
-	Body: {
-		action: string
-	};
-}>
-
-
 export class ServerApp extends BaseSystem{
 
 	public messagesHelper:typeof MessagesHelper;
@@ -46,7 +39,6 @@ export class ServerApp extends BaseSystem{
 	private wsServer:WsServer;
 	private startServerTime:number = 0;
 	private lastTickTime:number = 0;
-	private socketTime:number;
 	private stepWorld:number;
 	private ticks:number = 0;
 
@@ -149,7 +141,7 @@ export class ServerApp extends BaseSystem{
 	onDisconnect(e:Event)
 	{
 		var socket = e.socket as ExtWebSocket;
-		if (socket.idUser !== undefined && socket.roomId !== undefined) // todo просто проверка socket.idUser без условий при значении 0 выдаст ложь !
+		if (socket.idUser !== undefined && socket.roomId !== undefined) // просто проверка socket.idUser без условий при значении 0 выдаст ложь !
 		{
 			var rid = socket.roomId;
 			var room = this.rooms[rid];
@@ -191,6 +183,11 @@ export class ServerApp extends BaseSystem{
 		if (typ == protocol.MessageCsConnect.GetType())
 		{
 			var message = srcMessage as protocol.ICsConnect;
+			if (message.idSession == '')
+			{
+				this.warn("Сессия не передана:", message);
+				return;
+			}
 			var data:any = await this.decodeSession(message.idSession);
 			if (data.sessionData === undefined)
 			{
@@ -256,7 +253,6 @@ export class ServerApp extends BaseSystem{
 			var dt = 1;
 		this.lastTickTime = now;
 		this.ticks++;
-		this.socketTime += dt;
 
 		try
 		{

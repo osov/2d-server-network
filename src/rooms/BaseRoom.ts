@@ -1,9 +1,8 @@
-import {Vector2, Vector3} from 'three';
 import {WebSocket} from 'ws';
 import {BaseSystem, NumberPool} from 'ecs-threejs';
 import {ServerApp} from '../network/ServerApp';
 import {ExtWebSocket} from '../network/WsServer';
-import {MessagesHelper, DataHelper, protocol, utils, netUtils} from '2d-client-network';
+import {DataHelper, protocol, utils, netUtils, MessagesPackerList} from '2d-client-network';
 import {BaseEntity, keyboardState} from '../entitys/BaseEntity';
 import {DataHelperPool} from '../network/DataHelperPool';
 
@@ -13,6 +12,9 @@ interface ConnectionData{
 	keyboard:keyboardState;
 	socket:ExtWebSocket;
 }
+
+// type IdsMessage = (keyof typeof protocol.TypMessages);
+type IdsMessage = number;
 
 export class BaseRoom extends BaseSystem{
 
@@ -25,14 +27,14 @@ export class BaseRoom extends BaseSystem{
 	protected dynamicEntitys:{[k:number]:BaseEntity} = {};
 	protected numPool:NumberPool = new NumberPool(65535);
 	protected timeLock:number = 500;
-	protected typMessages:typeof protocol.TypMessages;
+	protected listPacker:MessagesPackerList;
 
-	constructor(app:ServerApp, typMessages:typeof protocol.TypMessages)
+	constructor(app:ServerApp, listPacker:MessagesPackerList)
 	{
 		super();
 		this.startTime = this.now();
 		this.app = app;
-		this.typMessages = typMessages;
+		this.listPacker = listPacker;
 		this.dataHelperPool = app.dataHelperPool;
 		var wrap = this.dataHelperPool.get();
 		this.dataHelper = wrap.item;
@@ -48,36 +50,23 @@ export class BaseRoom extends BaseSystem{
 		return this.now() - this.startTime;
 	}
 
-	wrapPosition(entity:BaseEntity)
-	{
-		const w = this.app.config.worldSize.x * 0.5;
-		const h = this.app.config.worldSize.y * 0.5;
-		entity.updateState();
-		if (entity.position.x >= w)
-			entity.position.x -= 2*w;
-		else if (entity.position.x <= -w)
-			entity.position.x += 2*w;
 
-		if (entity.position.y >= h)
-			entity.position.y -= 2*h;
-		else if (entity.position.y <= -h)
-			entity.position.y += 2*h;
-		entity.applyParams();
-	}
+	// -----------------------------------------------------------------------
+	// network
+	// -----------------------------------------------------------------------
 
-// -----------------------------------------------------------------------
-// network
-// -----------------------------------------------------------------------
-	packMessage(idMessage:number, message:protocol.IMessage, view:DataHelper)
+	packMessage(idMessage:IdsMessage, message:protocol.IMessage, view:DataHelper)
 	{
 		if (idMessage < 0)
 			return this.error("Сообщение не определено", idMessage, message);
-		var messagePacker:any = this.typMessages[idMessage as keyof protocol.IMessage];
+		var messagePacker = this.listPacker[idMessage];
+		if (messagePacker === undefined)
+			return this.error("Упаковщик для сообщения не найден:", idMessage);
 		messagePacker.Pack(view, message);
 		return view;
 	}
 
-	makeMessage(idMessage:number, message:protocol.IMessage)
+	makeMessage(idMessage:IdsMessage, message:protocol.IMessage)
 	{
 		var wrap = this.dataHelperPool.get();
 		var view = wrap.item;
@@ -95,19 +84,19 @@ export class BaseRoom extends BaseSystem{
 		}
 	}
 
-	sendSocket(socket:ExtWebSocket, idMessage:number, message:protocol.IMessage)
+	sendSocket(socket:ExtWebSocket, idMessage:IdsMessage, message:protocol.IMessage)
 	{
 		var pack = this.makeMessage(idMessage, message);
 		this.sendSocketBuffer(socket, pack);
 	}
 
-	sendTo(user:ConnectionData, idMessage:number, message:protocol.IMessage)
+	sendTo(user:ConnectionData, idMessage:IdsMessage, message:protocol.IMessage)
 	{
 		if (user && user.socket)
 			this.sendSocket(user.socket, idMessage, message);
 	}
 
-	setToUid(idUser:number, idMessage:number, message:protocol.IMessage)
+	setToUid(idUser:number, idMessage:IdsMessage, message:protocol.IMessage)
 	{
 		var user = this.connectedUsers[idUser];
 		if (!user)
@@ -115,7 +104,7 @@ export class BaseRoom extends BaseSystem{
 		return this.sendTo(user, idMessage, message);
 	}
 
-	sendAll(idMessage:number, message:protocol.IMessage, exceptSocket:ExtWebSocket|null = null)
+	sendAll(idMessage:IdsMessage, message:protocol.IMessage, exceptSocket:ExtWebSocket|null = null)
 	{
 		var pack = this.makeMessage(idMessage, message);
 		for (var idUser in this.connectedUsers)
@@ -147,7 +136,7 @@ export class BaseRoom extends BaseSystem{
 		this.dataHelper.startWriting();
 	}
 
-	addPack(idMessage:number, message:protocol.IMessage)
+	addPack(idMessage:IdsMessage, message:protocol.IMessage)
 	{
 		this.packMessage(idMessage, message, this.dataHelper);
 	}
@@ -157,7 +146,7 @@ export class BaseRoom extends BaseSystem{
 		this.dataHelper.writeRawBytes(buffer);
 	}
 
-	InsertFirstPack(idMessage:number, message:protocol.IMessage)
+	InsertFirstPack(idMessage:IdsMessage, message:protocol.IMessage)
 	{
 		var curBuffer = utils.copyBuffer(this.dataHelper.toArray()); // просто .toArray() вернет новый массив, но с указателем на старые элементы
 		this.dataHelper.startWriting(); // соответственно при изменении его, будет меняться исходный, т.е. по факту не копия старого.
@@ -165,17 +154,49 @@ export class BaseRoom extends BaseSystem{
 		this.addBuffer(curBuffer);
 	}
 
-	modifyState(state:any)
+	// -----------------------------------------------------------------------
+	// Room methods
+	// -----------------------------------------------------------------------
+	
+	wrapPosition(entity:BaseEntity)
+	{
+		const w = this.app.config.worldSize.x * 0.5;
+		const h = this.app.config.worldSize.y * 0.5;
+		entity.updateState();
+		if (entity.position.x >= w)
+			entity.position.x -= 2*w;
+		else if (entity.position.x <= -w)
+			entity.position.x += 2*w;
+
+		if (entity.position.y >= h)
+			entity.position.y -= 2*h;
+		else if (entity.position.y <= -h)
+			entity.position.y += 2*h;
+		entity.applyParams();
+	}
+
+	encodeEntityState(state:any, velocityType = 'uint8')
 	{
 		if (state.angle !== undefined)
 			state.angle = netUtils.degToByte(state.angle);
 		if (state.position !== undefined)
 			state.position = netUtils.vec2FloatToInt(state.position);
+		// очень часто для velocity не хватает точности uint8 поэтому тут используем порой uint16, 
+		// но можно и uint8 если цифры не будут с большим расхождением
+		// например можно 0.01, но число 0.001 может вызвать ошибку т.к. на клиенте оно будет восстановлено в 0,
+		// поэтому крайне важно случайную скорость не задавать, а только с шагом например randInt(0, 100) / 100 * 0.5
+		// также важно не забыть на клиенте привести к нужной точности знаков после запятой.
 		if (state.velocity !== undefined)
-			state.velocity = netUtils.toRangeVec2(state.velocity, 'uint8', -0.5, 0.5);
+			state.velocity = netUtils.toRangeVec2(state.velocity, velocityType, -0.5, 0.5);
 		return state;
 	}
 
+	encodeWorldState(state:any)
+	{
+		return this.encodeEntityState(state, 'uint8');
+	}
+
+	// апдейт каждые N мс
 	getWorldState()
 	{
 		var list = [];
@@ -185,68 +206,39 @@ export class BaseRoom extends BaseSystem{
 			if (!e.isSyncNetwork())
 				continue;
 
-			var info:protocol.IEntityInfo = {
+			var state:protocol.IEntityInfo = {
 				id:Number(id),
-				position:netUtils.vec2FloatToInt(e.getPosition()),
-				velocity:netUtils.toRangeVec2(e.getVelocity(), 'uint8', -0.5, 0.5),
-				angle:netUtils.degToByte(e.getRotationDeg())
+				position:e.getPosition(),
+				velocity:e.getVelocity(),
+				angle:e.getRotationDeg()
 			};
+			state = this.encodeWorldState(state);
 			//console.log("WorldState", info);
-			list.push(info);
+			list.push(state);
 		}
 		return list;
 	}
 
+	// инфа при подключении
 	getWorldInfo()
 	{
 		var wrap = this.dataHelperPool.get();
 		var view = wrap.item;
 
 		var msgTimestamp:protocol.IScTimestamp = {offsetTime:this.getOffsetTime()};
-		this.packMessage(protocol.MessageScTimestamp.GetType(), msgTimestamp, view);
+		this.packMessage(protocol.IdMessages.IScTimestamp, msgTimestamp, view);
 
 		for (var id in this.entitys)
 		{
 			var e = this.entitys[id];
 			// todo опасно если будет угол не целым числом или позиция
-			var state = this.modifyState(e.getState() as any);
+			var state = this.encodeEntityState(e.getState() as any, 'uint16');
 			//console.log("WorldInfo", info);
 			this.packMessage(e.idProtocol(), state, view);
 		}
 		var buffer = view.toArray();
 		this.dataHelperPool.put(wrap);
 		return buffer;
-	}
-
-	onSocketUpdate()
-	{
-		var msgTimestamp:protocol.IScTimestamp = {offsetTime:this.getOffsetTime()};
-		this.InsertFirstPack(protocol.MessageScTimestamp.GetType(), msgTimestamp);
-
-		var msgWorldState:protocol.IScWorldStateUpdate = {list:this.getWorldState()};
-		this.addPack(protocol.MessageScWorldStateUpdate.GetType(), msgWorldState);
-
-		this.sendFullBuffer();
-	}
-
-	onMessageInput(socket:ExtWebSocket, message:protocol.ICsInput)
-	{
-		const user = this.connectedUsers[socket.idUser];
-		if (!user)
-			return;
-		var key = String.fromCharCode(message.key);
-		var state = message.state === 1;
-		user.keyboard.keys[key] = state;
-	}
-
-
-	onMessageCursor(socket:ExtWebSocket, message:protocol.ICsMouseAngle)
-	{
-		const user = this.connectedUsers[socket.idUser];
-		if (!user)
-			return;
-		var angle = netUtils.byteToDeg(message.angle);
-		user.keyboard.mouseAngle = angle;
 	}
 
 	getNewId()
@@ -269,8 +261,8 @@ export class BaseRoom extends BaseSystem{
 		entity.onAdded();
 		if (Object.keys(this.connectedUsers).length == 0)
 			return this.log("Некому слать инфу о создании сущности", id);
-		var state = this.modifyState(entity.getState() as any);
-		//console.log("Add", state);
+		var state = this.encodeEntityState(entity.getState() as any, 'uint16');
+		//console.log("Add", entity.id, state);
 		this.addPack(entity.idProtocol(), state);
 		return id;
 	}
@@ -289,15 +281,53 @@ export class BaseRoom extends BaseSystem{
 		delete this.dynamicEntitys[id];
 
 		var msg:protocol.IScRemoveE = {idEntity:id};
-		this.addPack(protocol.MessageScRemoveE.GetType(), msg);
+		this.addPack(protocol.IdMessages.IScRemoveE, msg);
 	}
 
+	// -----------------------------------------------------------------------
+	// Room events
+	// -----------------------------------------------------------------------
+	
+	// отправка накопившихся сообщений всем
+	onSocketUpdate()
+	{
+		var msgTimestamp:protocol.IScTimestamp = {offsetTime:this.getOffsetTime()};
+		this.InsertFirstPack(protocol.IdMessages.IScTimestamp, msgTimestamp);
+
+		var msgWorldState:protocol.IScWorldStateUpdate = {list:this.getWorldState()};
+		this.addPack(protocol.IdMessages.IScWorldStateUpdate, msgWorldState);
+
+		this.sendFullBuffer();
+	}
+
+	// сообщение ввода
+	onMessageInput(socket:ExtWebSocket, message:protocol.ICsInput)
+	{
+		const user = this.connectedUsers[socket.idUser];
+		if (!user)
+			return;
+		var key = String.fromCharCode(message.key);
+		var state = message.state === 1;
+		user.keyboard.keys[key] = state;
+	}
+
+	// сообщение позиции мышки/джостика
+	onMessageCursor(socket:ExtWebSocket, message:protocol.ICsMouseAngle)
+	{
+		const user = this.connectedUsers[socket.idUser];
+		if (!user)
+			return;
+		var angle = netUtils.byteToDeg(message.angle);
+		user.keyboard.mouseAngle = angle;
+	}
+
+	// переподключился
 	onReconnect(socket:ExtWebSocket)
 	{
 		const idUser = socket.idUser;
-		this.log("Переподключение id_user:", idUser);
+		this.log("Переподключение idUser:", idUser);
 
-		this.sendSocket(socket, protocol.MessageScClose.GetType(), {});
+		this.sendSocket(socket, protocol.IdMessages.IScClose, {});
 
 		if (this.connectedUsers[idUser])
 			this.onLeave(socket);
@@ -315,7 +345,7 @@ export class BaseRoom extends BaseSystem{
 		};
 		// Юзеру - инфу о соедиении
 		var msg:protocol.IScInit = {serverStartTime:BigInt(this.startTime), offsetTime:this.getOffsetTime(), idUser:idUser, data:JSON.stringify(info)};
-		this.sendSocket(socket, protocol.MessageScInit.GetType(), msg);
+		this.sendSocket(socket, protocol.IdMessages.IScInit, msg);
 		return true;
 	}
 
@@ -330,7 +360,7 @@ export class BaseRoom extends BaseSystem{
 		this.log("Отключился idUser/idEntity:", socket.idUser, id);
 
 		var msg:protocol.IScLeave = {idUser:socket.idUser, id:id};
-		this.addPack(protocol.MessageScLeave.GetType(), msg);
+		this.addPack(protocol.IdMessages.IScLeave, msg);
 	}
 
 	// покидание комнаты
@@ -342,24 +372,25 @@ export class BaseRoom extends BaseSystem{
 	// обработка сообщения
 	onMessage(socket:ExtWebSocket, typ:number, srcMessage:protocol.IMessage)
 	{
-		if (typ == protocol.MessageCsInput.GetType())
+		if (typ == protocol.IdMessages.ICsInput)
 		{
 			this.onMessageInput(socket, srcMessage as protocol.ICsInput);
 		}
 
-		if (typ == protocol.MessageCsMouseAngle.GetType())
+		if (typ == protocol.IdMessages.ICsMouseAngle)
 		{
 			this.onMessageCursor(socket, srcMessage as protocol.ICsMouseAngle);
 		}
 
-		if (typ == protocol.MessageCsPing.GetType())
+		if (typ == protocol.IdMessages.ICsPing)
 		{
 			var message = srcMessage as protocol.ICsPing;
 			var msg:protocol.IScPong = {clientTime:message.clientTime, offsetTime:this.getOffsetTime()};
-			this.sendSocket(socket, protocol.MessageScPong.GetType(), msg);
+			this.sendSocket(socket, protocol.IdMessages.IScPong, msg);
 		}
 	}
 
+	// тик обновления мира
 	onUpdate(deltaTime:number)
 	{
 		// важно зафиксировать время последнего пересчета и отправить его в рассчет интерполяции(если апдейт происходит в другом времени),
