@@ -3,7 +3,7 @@ import { BaseSystem, ItemInfo, NumberPool, SpatialHashingInterest } from 'ecs-th
 import { ServerApp } from '../network/ServerApp';
 import { ExtWebSocket } from '../network/WsServer';
 import { DataHelper, protocol, utils, netUtils, MessagesPackerList } from '2d-client-network';
-import { BaseEntity, keyboardState } from '../entitys/BaseEntity';
+import { ServerEntity, keyboardState } from '../entitys/ServerEntity';
 import { DataHelperPool } from '../network/DataHelperPool';
 import { mergeBuffer } from '2d-client-network/src/core/utils';
 
@@ -24,8 +24,8 @@ export class BaseRoom extends BaseSystem {
 	protected app: ServerApp;
 	protected dataHelperPool: DataHelperPool;
 	protected dataHelper: DataHelper;
-	protected entitys: { [k: number]: BaseEntity } = {};
-	protected dynamicEntitys: { [k: number]: BaseEntity } = {};
+	protected entitys: { [k: number]: ServerEntity } = {};
+	protected dynamicEntitys: { [k: number]: ServerEntity } = {};
 	protected numPool: NumberPool = new NumberPool(65535);
 	protected timeLock: number = 500;
 	protected listPacker: MessagesPackerList;
@@ -145,7 +145,7 @@ export class BaseRoom extends BaseSystem {
 	// Room methods
 	// -----------------------------------------------------------------------
 
-	wrapPosition(entity: BaseEntity) {
+	wrapPosition(entity: ServerEntity) {
 		const w = this.app.config.worldSize.x * 0.5;
 		const h = this.app.config.worldSize.y * 0.5;
 		entity.updateState();
@@ -191,7 +191,7 @@ export class BaseRoom extends BaseSystem {
 				const userEntity = this.entitys[conn.idEntity];
 				if (userEntity) {
 					var _visibleSet = this.interestUpdate.getVisibleList(userEntity.get2dPosition());
-					var visibleSet = _visibleSet as Set<BaseEntity>;
+					var visibleSet = _visibleSet as Set<ServerEntity>;
 					for (let entity of visibleSet) {
 						if (!entity.isSyncNetwork())
 							continue;
@@ -252,7 +252,7 @@ export class BaseRoom extends BaseSystem {
 		return this.numPool.get();
 	}
 
-	addEntity(entity: BaseEntity, isDynamic = false, id = -1) {
+	addEntity(entity: ServerEntity, isDynamic = false, id = -1) {
 		if (id == -1)
 			var id = this.getNewId();
 		if (isDynamic)

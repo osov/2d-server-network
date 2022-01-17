@@ -1,5 +1,5 @@
 import {Vector2} from 'three';
-import {BaseEntity} from './BaseEntity';
+import {ServerEntity} from './ServerEntity';
 import {utils} from '2d-client-network';
 import {protocol} from '2d-client-network';
 
@@ -10,7 +10,7 @@ export interface BulletData{
 	timeLife:number;
 }
 
-export class BulletEntity extends BaseEntity{
+export class BulletEntity extends ServerEntity{
 
 	public params:BulletData;
 	private startPos:Vector2 = new Vector2();

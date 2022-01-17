@@ -1,4 +1,4 @@
-import * as ECS from 'ecs-threejs';
+import {BaseEntity} from 'ecs-threejs';
 import {protocol} from '2d-client-network';
 
 export interface keyboardState{
@@ -6,7 +6,7 @@ export interface keyboardState{
 	mouseAngle:number;
 }
 
-export class BaseEntity extends ECS.BaseEntity{
+export class ServerEntity extends BaseEntity{
 
 	public healht:number = 100;
 	public isAlive:boolean = true;
@@ -23,7 +23,7 @@ export class BaseEntity extends ECS.BaseEntity{
 		super.onAdded();
 	}
 
-	doDamage(damage:number, damager?:BaseEntity)
+	doDamage(damage:number, damager?:ServerEntity)
 	{
 		var oldHealht = this.healht;
 		this.healht -= damage;

@@ -1,8 +1,8 @@
 import {Vector2} from 'three';
-import {BaseEntity} from './BaseEntity';
+import {ServerEntity} from './ServerEntity';
 import {protocol} from '2d-client-network';
 
-export class SimpleEntity extends BaseEntity{
+export class SimpleEntity extends ServerEntity{
 
 	protected maxSpeed:number;
 	private tmpVec:Vector2 = new Vector2();
