@@ -172,7 +172,7 @@ export class BaseRoom extends BaseSystem {
 		// поэтому крайне важно случайную скорость не задавать, а только с шагом например randInt(0, 100) / 100 * 0.5
 		// также важно не забыть на клиенте привести к нужной точности знаков после запятой.
 		if (state.velocity !== undefined)
-			state.velocity = netUtils.toRangeVec2(state.velocity, velocityType, -0.5, 0.5);
+			state.velocity = netUtils.toRangeVec2(state.velocity, velocityType, -1, 1);
 		return state;
 	}
 
@@ -283,8 +283,8 @@ export class BaseRoom extends BaseSystem {
 		delete this.entitys[id];
 		delete this.dynamicEntitys[id];
 
-		var msg: protocol.IScRemoveE = { idEntity: id };
-		this.addPack(protocol.IdMessages.IScRemoveE, msg);
+		var msg: protocol.IScRemoveEntity = { idEntity: id };
+		this.addPack(protocol.IdMessages.IScRemoveEntity, msg);
 	}
 
 	// -----------------------------------------------------------------------
