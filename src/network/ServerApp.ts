@@ -102,6 +102,12 @@ export class ServerApp extends BaseSystem{
 		}
 	}
 
+	async stop()
+	{
+		await this.httpServer.close();
+		await this.wsServer.stop();
+	}
+
 	async onServerMessage404(req:FastifyRequest, reply:FastifyReply)
 	{
 		this.log('404');

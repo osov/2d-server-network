@@ -48,6 +48,11 @@ export class WsServer extends BaseSystem{
 		});
 	}
 
+	async stop()
+	{
+		await this.server.close();
+	}
+
 	private onConnect(socket:ExtWebSocket, request:http.IncomingMessage)
 	{
 		this.dispatchEvent({type:"connection", socket, request});

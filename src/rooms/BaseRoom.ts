@@ -30,7 +30,7 @@ export class BaseRoom extends BaseSystem {
 	protected timeLock: number = 500;
 	protected listPacker: MessagesPackerList;
 	protected interestActive: boolean = true;
-	protected interesetDistance = 1500;
+	protected interesetDistance = 3000;
 	private interestUpdate: SpatialHashingInterest;
 
 	constructor(app: ServerApp, listPacker: MessagesPackerList) {
@@ -185,7 +185,8 @@ export class BaseRoom extends BaseSystem {
 		var list = [];
 		// рассчет по пространственному хешу
 		if (idUser > -1) {
-			this.interestUpdate.updateFull(this.dynamicEntitys);
+			// todo делать обязательный рассчет полного обновления для каждого юзера каждые N сек
+			// т.к. если сохранена старая позиция, а объект ушел далеко, то для наблюдателя позиция останется старой
 			const conn = this.connectedUsers[idUser];
 			if (conn) {
 				const userEntity = this.entitys[conn.idEntity];
@@ -296,6 +297,7 @@ export class BaseRoom extends BaseSystem {
 		var msgTimestamp: protocol.IScTimestamp = { offsetTime: this.getOffsetTime() };
 
 		if (this.interestActive) {
+			this.interestUpdate.updateFull(this.dynamicEntitys);
 			for (var idUser in this.connectedUsers) {
 				const connection = this.connectedUsers[idUser];
 				const msgWorldState: protocol.IScWorldStateUpdate = { list: this.getWorldState(Number(idUser)) };
